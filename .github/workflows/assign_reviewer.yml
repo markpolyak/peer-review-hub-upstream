@@ -1,0 +1,89 @@
+name: Assign Reviewer
+
+on:
+  pull_request:
+    types: [opened]
+    # Only PRs from branches matching {login}/hw* pattern
+    branches: [main]
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: state-write
+      cancel-in-progress: false
+    # Only run for branches like alice/hw2, not main or other service branches
+    if: contains(github.head_ref, '/hw')
+
+    steps:
+      - name: Checkout coordinator repo
+        uses: actions/checkout@v4
+        with:
+          # state/hw*.json lives here; we need to commit changes back
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Extract author and HW name from branch
+        id: meta
+        run: |
+          # Branch format: alice/hw2
+          BRANCH="${{ github.head_ref }}"
+          AUTHOR=$(echo "$BRANCH" | cut -d'/' -f1)
+          HW=$(echo "$BRANCH" | cut -d'/' -f2)
+          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "hw=$HW" >> $GITHUB_OUTPUT
+
+     - name: Validate author identity
+        run: |
+          ACTUAL="${{ github.actor }}"          # реальный логин GitHub
+          BRANCH_AUTHOR="${{ steps.meta.outputs.author }}"  # из имени ветки
+          
+          # 1. Ветка должна начинаться с реального логина
+          if [ "$ACTUAL" != "$BRANCH_AUTHOR" ]; then
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "❌ @${ACTUAL}, имя ветки содержит \`${BRANCH_AUTHOR}\`, но PR открыт от \`${ACTUAL}\`. Переименуйте ветку: \`${ACTUAL}/hw*\`." \
+              --repo ${{ github.repository }}
+            exit 1 # останавливает workflow, рецензент не назначается
+          fi
+          
+          # 2. Файл должен лежать в reviews/{реальный_логин}/
+          FILES=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json files --jq '.files[].path' \
+            --repo ${{ github.repository }})
+            
+          if ! echo "$FILES" | grep -q "^reviews/${ACTUAL}/"; then
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "❌ @${ACTUAL}, файл должен находиться в \`reviews/${ACTUAL}/\`. Сейчас изменены: \`$(echo $FILES | tr ' ' ', ')\`.  Исправьте путь и обновите PR." \
+              --repo ${{ github.repository }}
+            exit 1 # останавливает workflow, рецензент не назначается
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Run assign.py
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ORG_NAME: ${{ secrets.ORG_NAME }}
+          HUB_REPO: ${{ github.repository }}
+        run: |
+          python scripts/assign.py \
+            --hw "${{ steps.meta.outputs.hw }}" \
+            --author "${{ steps.meta.outputs.author }}" \
+            --pr "${{ github.event.pull_request.number }}" \
+            --pr-url "${{ github.event.pull_request.html_url }}"
+
+      - name: Commit updated state
+        run: |
+          git config user.name "peer-review-bot"
+          git config user.email "bot@noreply"
+          git add state/
+          # Don't fail if nothing changed
+          git diff --cached --quiet || git commit -m "state: assign reviewer for ${{ github.head_ref }}"
+          git push

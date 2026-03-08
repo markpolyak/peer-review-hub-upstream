@@ -1,0 +1,28 @@
+name: Nightly Reminder
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC каждый день
+  workflow_dispatch:        # можно запустить вручную
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Send reminders
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          HUB_REPO: ${{ github.repository }}
+          REMINDER_DAYS: "3"   # напомнить если рецензия не выдана N дней
+        run: python scripts/remind.py

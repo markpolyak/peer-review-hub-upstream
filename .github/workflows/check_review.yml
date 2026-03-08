@@ -1,0 +1,55 @@
+name: Check Review Completion
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: state-write
+      cancel-in-progress: false
+    if: contains(github.event.pull_request.head.ref, '/hw')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          AUTHOR=$(echo "$BRANCH" | cut -d'/' -f1)
+          HW=$(echo "$BRANCH" | cut -d'/' -f2)
+          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "hw=$HW" >> $GITHUB_OUTPUT
+
+      - name: Run check_completion.py
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          HUB_REPO: ${{ github.repository }}
+        run: |
+          python scripts/check_completion.py \
+            --hw "${{ steps.meta.outputs.hw }}" \
+            --reviewer "${{ github.event.review.user.login }}" \
+            --author "${{ steps.meta.outputs.author }}" \
+            --pr "${{ github.event.pull_request.number }}"
+
+      - name: Commit updated state
+        run: |
+          git config user.name "peer-review-bot"
+          git config user.email "bot@noreply"
+          git add state/
+          git diff --cached --quiet || git commit -m "state: review checked for ${{ github.event.pull_request.head.ref }}"
+          git push
