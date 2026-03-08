@@ -1,0 +1,21 @@
+name: Add Students to Peer Review Hub
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # каждый день в 08:00 UTC
+  workflow_dispatch:       # внеочередной ручной запуск
+
+jobs:
+  add-students:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Add students to team
+        run: python scripts/add_students_to_hub.py --org "${{ secrets.ORG_NAME }}"
+        env:
+          GH_TOKEN: ${{ secrets.COORDINATOR_TOKEN }}
