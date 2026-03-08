@@ -9,12 +9,13 @@ on:
 jobs:
   assign:
     runs-on: ubuntu-latest
+    # Only run for branches like alice/hw2, not main or other service branches
+    if: contains(github.head_ref, '/hw')
+    
     concurrency:
       group: state-write
       cancel-in-progress: false
-    # Only run for branches like alice/hw2, not main or other service branches
-    if: contains(github.head_ref, '/hw')
-
+      
     steps:
       - name: Checkout coordinator repo
         uses: actions/checkout@v4
@@ -40,7 +41,9 @@ jobs:
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
           echo "hw=$HW" >> $GITHUB_OUTPUT
 
-     - name: Validate author identity
+      - name: Validate author identity
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           ACTUAL="${{ github.actor }}"          # реальный логин GitHub
           BRANCH_AUTHOR="${{ steps.meta.outputs.author }}"  # из имени ветки
@@ -64,8 +67,6 @@ jobs:
               --repo ${{ github.repository }}
             exit 1 # останавливает workflow, рецензент не назначается
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Run assign.py
         env:
