@@ -91,6 +91,7 @@ def ensure_student(state: dict, login: str) -> dict:
             "pr_number": None,
             "submitted_at": None,
             "reviewers_assigned": [],   # incoming: who reviews this student
+            "reviewer_assigned_at": {}, # incoming: when each reviewer was assigned
             "reviews_received": 0,
             "reviewing": [],            # outgoing: who this student reviews
             "reviews_given": 0,
@@ -117,9 +118,9 @@ def find_reviewer(submitter: str, state: dict) -> str | None:
             continue  # already assigned to review this student
         if submitter in data["reviewers_assigned"]:
             continue  # A↔B prevention: login already reviews submitter
-        if data["reviews_given"] >= MAX_REVIEWS_PER_STUDENT:
-            continue  # overloaded
-        candidates.append((login, data["reviews_given"]))
+        if len(data["reviewing"]) >= MAX_REVIEWS_PER_STUDENT:
+            continue  # overloaded (count assigned, not completed)
+        candidates.append((login, data.get("reviews_given", 0)))
 
     if not candidates:
         return None
@@ -136,6 +137,28 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
     state = load_state(hw)
 
     author_data = ensure_student(state, author)
+
+    # Block re-submission: a PR for this HW already exists in state.
+    # Automatic reset is unsafe: we cannot distinguish an accidental duplicate
+    # PR from an intentional re-submission, and either way the correct workflow
+    # is to push changes to the existing branch (which updates the open PR).
+    # Manual instructor reset: edit state/{hw}.json directly.
+    if author_data["pr_url"] is not None and author_data["pr_url"] != pr_url:
+        post_pr_comment(
+            HUB_REPO,
+            pr_number,
+            f"❌ @{author}, для **{hw}** уже существует активный PR: {author_data['pr_url']}\n\n"
+            f"Пожалуйста, закройте этот PR и внесите изменения в существующий:\n"
+            f"```\n"
+            f"git checkout {author}/{hw}\n"
+            f"# внесите правки\n"
+            f"git push origin {author}/{hw}\n"
+            f"```\n"
+            f"Если вам нужно сбросить состояние рецензирования — обратитесь к преподавателю.",
+        )
+        print(f"Blocked re-submission for {author}: existing PR {author_data['pr_url']}")
+        sys.exit(1)
+
     author_data["pr_url"] = pr_url
     author_data["pr_number"] = pr_number
     author_data["submitted_at"] = datetime.now(timezone.utc).isoformat()
@@ -148,6 +171,9 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
             break
         reviewer_data = ensure_student(state, reviewer)
         author_data["reviewers_assigned"].append(reviewer)
+        author_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
+            datetime.now(timezone.utc).isoformat()
+        )
         reviewer_data["reviewing"].append(author)
 
         request_reviewer(HUB_REPO, pr_number, reviewer)
@@ -166,6 +192,9 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
                 break
             reviewer_data = ensure_student(state, reviewer)
             pending_data["reviewers_assigned"].append(reviewer)
+            pending_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
+                datetime.now(timezone.utc).isoformat()
+            )
             reviewer_data["reviewing"].append(pending_author)
             request_reviewer(HUB_REPO, pending_data["pr_number"], reviewer)
             print(f"(pending) Assigned {reviewer} to review {pending_author}")

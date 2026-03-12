@@ -33,16 +33,14 @@ def gh_api(path: str, method: str = "GET", fields: dict = None) -> list | dict |
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # --paginate may return multiple JSON arrays — concatenate them
+        # --paginate concatenates JSON arrays without separator: [][]\n[]
+        # Replace array boundaries with a comma to form a single valid array
         import re
-        arrays = re.findall(r'\[.*?\]', text, re.DOTALL)
-        merged = []
-        for a in arrays:
-            try:
-                merged.extend(json.loads(a))
-            except json.JSONDecodeError:
-                pass
-        return merged
+        merged_text = re.sub(r'\]\s*\[', ',', text)
+        try:
+            return json.loads(merged_text)
+        except json.JSONDecodeError:
+            return []
 
 
 def get_outside_collaborators(org: str) -> list[str]:
