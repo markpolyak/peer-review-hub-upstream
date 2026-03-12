@@ -215,11 +215,7 @@ gh label create "peer-review-complete" --color "0075ca" --repo org/peer-review-h
 
 ### Какие токены нужны
 
-Системе нужен один Personal Access Token (PAT) с правами на управление организацией. Он используется в двух местах под разными именами:
-- `GH_TOKEN` в `peer-review-hub` — для workflows назначения рецензентов
-- `COORDINATOR_TOKEN` в шаблоне Classroom-задания — для добавления студентов в Team
-
-Это может быть один и тот же токен.
+Системе нужен один Personal Access Token (PAT) с правами на управление организацией. Он используется под именем `GH_TOKEN` в `peer-review-hub` — для workflows назначения рецензентов.
 
 ### Создание PAT
 
@@ -244,20 +240,6 @@ gh label create "peer-review-complete" --color "0075ca" --repo org/peer-review-h
 |------|-------|
 | `GH_TOKEN` | ваш PAT |
 | `ORG_NAME` | название организации (например, `my-university-org`) |
-
-### Добавление токена в шаблон Classroom-задания
-
-Если вы используете `join_peer_review.yml` в шаблоне — добавьте тот же PAT в шаблонный репозиторий:
-
-1. Перейдите в шаблонный репо → **Settings** → **Secrets and variables** → **Actions**
-2. Добавьте secret:
-
-| Name | Value |
-|------|-------|
-| `COORDINATOR_TOKEN` | ваш PAT |
-| `ORG_NAME` | название организации |
-
-> ⚠️ GitHub Classroom автоматически копирует secrets из шаблона в репозитории студентов только если они добавлены как **Repository secrets**, не как Environment secrets.
 
 ### Ротация токена
 

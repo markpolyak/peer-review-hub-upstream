@@ -18,4 +18,4 @@ jobs:
       - name: Add students to team
         run: python scripts/add_students_to_hub.py --org "${{ secrets.ORG_NAME }}"
         env:
-          GH_TOKEN: ${{ secrets.COORDINATOR_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
