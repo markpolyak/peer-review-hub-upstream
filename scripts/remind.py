@@ -25,12 +25,6 @@ HEADERS = {
 }
 
 
-def gh_get(path):
-    r = requests.get(f"https://api.github.com{path}", headers=HEADERS)
-    r.raise_for_status()
-    return r.json()
-
-
 def post_comment(pr_number, body):
     requests.post(
         f"https://api.github.com/repos/{HUB_REPO}/issues/{pr_number}/comments",
@@ -39,9 +33,9 @@ def post_comment(pr_number, body):
     ).raise_for_status()
 
 
-def has_reviewed(pr_number, reviewer):
-    reviews = gh_get(f"/repos/{HUB_REPO}/pulls/{pr_number}/reviews")
-    return any(r["user"]["login"] == reviewer for r in reviews)
+def is_review_counted(state: dict, reviewer: str, author: str) -> bool:
+    """Check if this review was already counted (passed all requirements)."""
+    return f"{reviewer}->{author}" in state.get("counted_reviews", [])
 
 
 def main():
@@ -58,17 +52,21 @@ def main():
             if not data.get("pr_number"):
                 continue
 
-            submitted_at = data.get("submitted_at")
-            if not submitted_at:
-                continue
-            if datetime.fromisoformat(submitted_at) > cutoff:
-                continue  # too fresh
-
             pr_number = data["pr_number"]
+            reviewer_assigned_at = data.get("reviewer_assigned_at", {})
 
             for reviewer in data.get("reviewers_assigned", []):
-                if has_reviewed(pr_number, reviewer):
+                # Skip if already counted (review met all requirements)
+                if is_review_counted(state, reviewer, author):
                     continue
+
+                # Use per-reviewer assignment time; fall back to submission time
+                assigned_at_str = reviewer_assigned_at.get(reviewer) or data.get("submitted_at")
+                if not assigned_at_str:
+                    continue
+                if datetime.fromisoformat(assigned_at_str) > cutoff:
+                    continue  # assigned too recently
+
                 print(f"Reminding {reviewer} to review {author} ({hw})")
                 post_comment(
                     pr_number,

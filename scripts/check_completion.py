@@ -91,6 +91,10 @@ def process_review(hw: str, reviewer: str, author: str, pr_number: int) -> None:
     reviewer_data = students[reviewer]
     author_data = students[author]
 
+    if reviewer not in author_data.get("reviewers_assigned", []):
+        print(f"{reviewer} was not assigned to review {author}, skipping.")
+        return
+
     # Check requirements
     has_formal_review = check_formal_review(pr_number, reviewer)
     comment_count = count_review_comments(pr_number, reviewer)

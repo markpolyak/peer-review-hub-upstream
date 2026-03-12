@@ -16,6 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Always checkout main: state/hw*.json lives there and we push back to it.
+          # Without ref: main the pull_request_review trigger gives a detached HEAD
+          # (merge commit), and git push fails with "not currently on a branch".
+          ref: main
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Set up Python
@@ -47,9 +51,11 @@ jobs:
             --pr "${{ github.event.pull_request.number }}"
 
       - name: Commit updated state
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           git config user.name "peer-review-bot"
           git config user.email "bot@noreply"
           git add state/
-          git diff --cached --quiet || git commit -m "state: review checked for ${{ github.event.pull_request.head.ref }}"
+          git diff --cached --quiet || git commit -m "state: review checked for ${BRANCH}"
           git push
