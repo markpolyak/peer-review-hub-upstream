@@ -120,12 +120,14 @@ def find_reviewer(submitter: str, state: dict) -> str | None:
             continue  # A↔B prevention: login already reviews submitter
         if len(data["reviewing"]) >= MAX_REVIEWS_PER_STUDENT:
             continue  # overloaded (count assigned, not completed)
-        candidates.append((login, data.get("reviews_given", 0)))
+        # Primary key: current assigned load (assigned but not yet completed).
+        # Secondary key: completed reviews — tie-break in favour of less experienced reviewers.
+        candidates.append((login, len(data["reviewing"]), data.get("reviews_given", 0)))
 
     if not candidates:
         return None
 
-    candidates.sort(key=lambda x: x[1])
+    candidates.sort(key=lambda x: (x[1], x[2]))
     return candidates[0][0]
 
 
