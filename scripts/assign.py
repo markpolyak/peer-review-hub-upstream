@@ -163,24 +163,10 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
     author_data["pr_number"] = pr_number
     author_data["submitted_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Try to assign up to 2 reviewers
-    assigned_now = []
-    while len(author_data["reviewers_assigned"]) < 2:
-        reviewer = find_reviewer(author, state)
-        if reviewer is None:
-            break
-        reviewer_data = ensure_student(state, reviewer)
-        author_data["reviewers_assigned"].append(reviewer)
-        author_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
-            datetime.now(timezone.utc).isoformat()
-        )
-        reviewer_data["reviewing"].append(author)
-
-        request_reviewer(HUB_REPO, pr_number, reviewer)
-        assigned_now.append(reviewer)
-        print(f"Assigned {reviewer} to review {author}")
-
-    # Process pending students who couldn't get 2 reviewers before
+    # Process pending students first: they submitted earlier and waited longest.
+    # Doing this before assigning reviewers for the new author means the new
+    # submitter (B) becomes a candidate for pending students (A), not the other
+    # way around. Early submission is rewarded, not penalised.
     still_pending = []
     for pending_author in state.get("pending", []):
         if pending_author == author:
@@ -203,6 +189,23 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
             still_pending.append(pending_author)
 
     state["pending"] = still_pending
+
+    # Now find reviewers for the new author from whoever is still available
+    assigned_now = []
+    while len(author_data["reviewers_assigned"]) < 2:
+        reviewer = find_reviewer(author, state)
+        if reviewer is None:
+            break
+        reviewer_data = ensure_student(state, reviewer)
+        author_data["reviewers_assigned"].append(reviewer)
+        author_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
+            datetime.now(timezone.utc).isoformat()
+        )
+        reviewer_data["reviewing"].append(author)
+
+        request_reviewer(HUB_REPO, pr_number, reviewer)
+        assigned_now.append(reviewer)
+        print(f"Assigned {reviewer} to review {author}")
 
     # If author still needs reviewers, add to pending
     if len(author_data["reviewers_assigned"]) < 2:
