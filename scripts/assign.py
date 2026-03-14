@@ -140,12 +140,19 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
 
     author_data = ensure_student(state, author)
 
-    # Block re-submission: a PR for this HW already exists in state.
+    # Idempotency: if this exact PR was already processed (e.g. synchronize
+    # event after the initial 'opened' succeeded), skip silently — reviewer
+    # is already assigned, state is already written.
+    if author_data["pr_url"] == pr_url:
+        print(f"{author}: already processed for {hw} (same PR), skipping.")
+        return
+
+    # Block re-submission: a different PR for this HW already exists in state.
     # Automatic reset is unsafe: we cannot distinguish an accidental duplicate
     # PR from an intentional re-submission, and either way the correct workflow
     # is to push changes to the existing branch (which updates the open PR).
     # Manual instructor reset: edit state/{hw}.json directly.
-    if author_data["pr_url"] is not None and author_data["pr_url"] != pr_url:
+    if author_data["pr_url"] is not None:
         post_pr_comment(
             HUB_REPO,
             pr_number,

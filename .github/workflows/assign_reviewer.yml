@@ -2,7 +2,9 @@ name: Assign Reviewer
 
 on:
   pull_request:
-    types: [opened]
+    # opened    — initial submission
+    # synchronize — student pushed a fix after a validation error
+    types: [opened, synchronize]
     # Only PRs from branches matching {login}/hw* pattern
     branches: [main]
 
@@ -80,6 +82,19 @@ jobs:
               --body "❌ @${ACTUAL}, файл должен находиться в \`reviews/${ACTUAL}/\`. Сейчас изменены: \`$(echo $FILES | tr ' ' ', ')\`. Исправьте путь и обновите PR." \
               --repo ${{ github.repository }}
             exit 1
+          fi
+
+          # 4. Soft check: PR title format (informational only, does not block).
+          # Only on 'opened' — don't spam on every push to the same PR.
+          if [ "${{ github.event.action }}" = "opened" ]; then
+            EXPECTED_TITLE="${HW}: ${ACTUAL}"
+            ACTUAL_TITLE=$(gh pr view "$PR" --json title --jq '.title' \
+              --repo ${{ github.repository }})
+            if [ "$ACTUAL_TITLE" != "$EXPECTED_TITLE" ]; then
+              gh pr comment "$PR" \
+                --body "💬 @${ACTUAL}, рекомендуемый заголовок PR: \`${EXPECTED_TITLE}\`. Назначение рецензента при этом не блокируется — можете исправить заголовок в любой момент." \
+                --repo ${{ github.repository }}
+            fi
           fi
 
       - name: Run assign.py

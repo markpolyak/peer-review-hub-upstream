@@ -45,6 +45,12 @@ def main():
     for state_file in Path("state").glob("*.json"):
         hw = state_file.stem
         state = json.loads(state_file.read_text())
+        state_modified = False
+
+        # last_reminded_at tracks when we last pinged each reviewer per author.
+        # Key: "{reviewer}->{author}", value: ISO timestamp string.
+        # Without this, the nightly job would spam every single day.
+        last_reminded_at = state.setdefault("last_reminded_at", {})
 
         for author, data in state["students"].items():
             if data.get("completed"):
@@ -60,12 +66,20 @@ def main():
                 if is_review_counted(state, reviewer, author):
                     continue
 
-                # Use per-reviewer assignment time; fall back to submission time
-                assigned_at_str = reviewer_assigned_at.get(reviewer) or data.get("submitted_at")
-                if not assigned_at_str:
-                    continue
-                if datetime.fromisoformat(assigned_at_str) > cutoff:
-                    continue  # assigned too recently
+                reminder_key = f"{reviewer}->{author}"
+                last_time_str = last_reminded_at.get(reminder_key)
+
+                if last_time_str:
+                    # Already reminded before: enforce cooldown from last reminder
+                    if datetime.fromisoformat(last_time_str) > cutoff:
+                        continue  # reminded too recently, respect cooldown
+                else:
+                    # First reminder: enforce grace period from assignment time
+                    assigned_at_str = reviewer_assigned_at.get(reviewer) or data.get("submitted_at")
+                    if not assigned_at_str:
+                        continue
+                    if datetime.fromisoformat(assigned_at_str) > cutoff:
+                        continue  # assigned too recently
 
                 print(f"Reminding {reviewer} to review {author} ({hw})")
                 post_comment(
@@ -74,6 +88,11 @@ def main():
                     f"Пожалуйста, оставьте review (Approve / Request changes) "
                     f"и минимум 2 inline-комментария.",
                 )
+                last_reminded_at[reminder_key] = now.isoformat()
+                state_modified = True
+
+        if state_modified:
+            state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
