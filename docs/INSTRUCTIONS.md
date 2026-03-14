@@ -36,10 +36,11 @@ gh label create "peer-review-complete" --color "0075ca" --repo org/peer-review-h
 ### 3. Добавить студентов в репо
 
 ```bash
-python scripts/add_students_to_hub.py
+python scripts/add_students_to_hub.py --org YOUR_ORG_NAME
 ```
 
-(Скрипт ищет все репо `hw2-*` в организации и добавляет владельцев в Team)
+(Скрипт находит всех Outside Collaborators организации и добавляет их в Team `peer-review-students`.
+В ежедневном workflow аргумент `--org` подставляется автоматически из secret `ORG_NAME`.)
 
 ## Workflow студента
 

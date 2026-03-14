@@ -120,12 +120,14 @@ def find_reviewer(submitter: str, state: dict) -> str | None:
             continue  # A↔B prevention: login already reviews submitter
         if len(data["reviewing"]) >= MAX_REVIEWS_PER_STUDENT:
             continue  # overloaded (count assigned, not completed)
-        candidates.append((login, data.get("reviews_given", 0)))
+        # Primary key: current assigned load (assigned but not yet completed).
+        # Secondary key: completed reviews — tie-break in favour of less experienced reviewers.
+        candidates.append((login, len(data["reviewing"]), data.get("reviews_given", 0)))
 
     if not candidates:
         return None
 
-    candidates.sort(key=lambda x: x[1])
+    candidates.sort(key=lambda x: (x[1], x[2]))
     return candidates[0][0]
 
 
@@ -138,12 +140,19 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
 
     author_data = ensure_student(state, author)
 
-    # Block re-submission: a PR for this HW already exists in state.
+    # Idempotency: if this exact PR was already processed (e.g. synchronize
+    # event after the initial 'opened' succeeded), skip silently — reviewer
+    # is already assigned, state is already written.
+    if author_data["pr_url"] == pr_url:
+        print(f"{author}: already processed for {hw} (same PR), skipping.")
+        return
+
+    # Block re-submission: a different PR for this HW already exists in state.
     # Automatic reset is unsafe: we cannot distinguish an accidental duplicate
     # PR from an intentional re-submission, and either way the correct workflow
     # is to push changes to the existing branch (which updates the open PR).
     # Manual instructor reset: edit state/{hw}.json directly.
-    if author_data["pr_url"] is not None and author_data["pr_url"] != pr_url:
+    if author_data["pr_url"] is not None:
         post_pr_comment(
             HUB_REPO,
             pr_number,
@@ -163,24 +172,10 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
     author_data["pr_number"] = pr_number
     author_data["submitted_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Try to assign up to 2 reviewers
-    assigned_now = []
-    while len(author_data["reviewers_assigned"]) < 2:
-        reviewer = find_reviewer(author, state)
-        if reviewer is None:
-            break
-        reviewer_data = ensure_student(state, reviewer)
-        author_data["reviewers_assigned"].append(reviewer)
-        author_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
-            datetime.now(timezone.utc).isoformat()
-        )
-        reviewer_data["reviewing"].append(author)
-
-        request_reviewer(HUB_REPO, pr_number, reviewer)
-        assigned_now.append(reviewer)
-        print(f"Assigned {reviewer} to review {author}")
-
-    # Process pending students who couldn't get 2 reviewers before
+    # Process pending students first: they submitted earlier and waited longest.
+    # Doing this before assigning reviewers for the new author means the new
+    # submitter (B) becomes a candidate for pending students (A), not the other
+    # way around. Early submission is rewarded, not penalised.
     still_pending = []
     for pending_author in state.get("pending", []):
         if pending_author == author:
@@ -203,6 +198,23 @@ def process_submission(hw: str, author: str, pr_number: int, pr_url: str) -> Non
             still_pending.append(pending_author)
 
     state["pending"] = still_pending
+
+    # Now find reviewers for the new author from whoever is still available
+    assigned_now = []
+    while len(author_data["reviewers_assigned"]) < 2:
+        reviewer = find_reviewer(author, state)
+        if reviewer is None:
+            break
+        reviewer_data = ensure_student(state, reviewer)
+        author_data["reviewers_assigned"].append(reviewer)
+        author_data.setdefault("reviewer_assigned_at", {})[reviewer] = (
+            datetime.now(timezone.utc).isoformat()
+        )
+        reviewer_data["reviewing"].append(author)
+
+        request_reviewer(HUB_REPO, pr_number, reviewer)
+        assigned_now.append(reviewer)
+        print(f"Assigned {reviewer} to review {author}")
 
     # If author still needs reviewers, add to pending
     if len(author_data["reviewers_assigned"]) < 2:

@@ -66,13 +66,14 @@ def save_state(hw: str, state: dict) -> None:
 
 def count_review_comments(pr_number: int, reviewer: str) -> int:
     """Count inline review comments left by reviewer on this PR."""
-    comments = gh_get(f"/repos/{HUB_REPO}/pulls/{pr_number}/comments")
+    # per_page=100 avoids the default 30-item page cap; enough for any student PR.
+    comments = gh_get(f"/repos/{HUB_REPO}/pulls/{pr_number}/comments?per_page=100")
     return sum(1 for c in comments if c["user"]["login"] == reviewer)
 
 
 def check_formal_review(pr_number: int, reviewer: str) -> bool:
     """Check that reviewer submitted a formal review (not just inline comments)."""
-    reviews = gh_get(f"/repos/{HUB_REPO}/pulls/{pr_number}/reviews")
+    reviews = gh_get(f"/repos/{HUB_REPO}/pulls/{pr_number}/reviews?per_page=100")
     valid_states = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
     return any(
         r["user"]["login"] == reviewer and r["state"] in valid_states

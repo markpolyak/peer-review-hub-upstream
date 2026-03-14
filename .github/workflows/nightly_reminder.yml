@@ -9,6 +9,12 @@ jobs:
   remind:
     runs-on: ubuntu-latest
 
+    # remind.py writes last_reminded_at to state/ — use the same mutex
+    # as assign/check to avoid concurrent state corruption.
+    concurrency:
+      group: state-write
+      cancel-in-progress: false
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,5 +30,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           HUB_REPO: ${{ github.repository }}
-          REMINDER_DAYS: "3"   # напомнить если рецензия не выдана N дней
+          REMINDER_DAYS: "3"   # grace period before first reminder; cooldown between repeats
         run: python scripts/remind.py
+
+      - name: Commit updated reminder state
+        run: |
+          git config user.name "peer-review-bot"
+          git config user.email "bot@noreply"
+          git add state/
+          git diff --cached --quiet || git commit -m "state: update last_reminded_at"
+          git push
