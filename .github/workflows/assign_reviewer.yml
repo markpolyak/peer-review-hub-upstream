@@ -55,36 +55,8 @@ jobs:
           HW="${{ steps.meta.outputs.hw }}"
           PR="${{ github.event.pull_request.number }}"
 
-          # 1. Имя ветки должно начинаться с реального логина
-          if [ "$ACTUAL" != "$BRANCH_AUTHOR" ]; then
-            gh pr comment "$PR" \
-              --body "❌ @${ACTUAL}, имя ветки содержит \`${BRANCH_AUTHOR}\`, но PR открыт от \`${ACTUAL}\`. Переименуйте ветку: \`${ACTUAL}/hw*\`." \
-              --repo ${{ github.repository }}
-            exit 1
-          fi
-
-          # 2. HW-часть ветки должна строго соответствовать формату hw<число>
-          # Это предотвращает обход re-submission check через ветки вида hw2-v2, hw2-final и т.п.
-          if ! echo "$HW" | grep -qE '^hw[0-9]+$'; then
-            gh pr comment "$PR" \
-              --body "❌ @${ACTUAL}, неверный формат имени ветки. Ожидается \`${ACTUAL}/hw<номер>\` (например \`${ACTUAL}/hw2\`), получено \`${ACTUAL}/${HW}\`." \
-              --repo ${{ github.repository }}
-            exit 1
-          fi
-
-          # 3. Файл должен лежать в reviews/{реальный_логин}/
-          FILES=$(gh pr view "$PR" \
-            --json files --jq '.files[].path' \
-            --repo ${{ github.repository }})
-
-          if ! echo "$FILES" | grep -q "^reviews/${ACTUAL}/"; then
-            gh pr comment "$PR" \
-              --body "❌ @${ACTUAL}, файл должен находиться в \`reviews/${ACTUAL}/\`. Сейчас изменены: \`$(echo $FILES | tr ' ' ', ')\`. Исправьте путь и обновите PR." \
-              --repo ${{ github.repository }}
-            exit 1
-          fi
-
-          # 4. Soft check: PR title format (informational only, does not block).
+          # 1. Soft check: PR title format (informational only, does not block).
+          # Runs first so the hint is always sent even if hard checks below fail.
           # Only on 'opened' — don't spam on every push to the same PR.
           if [ "${{ github.event.action }}" = "opened" ]; then
             EXPECTED_TITLE="${HW}: ${ACTUAL}"
@@ -95,6 +67,35 @@ jobs:
                 --body "💬 @${ACTUAL}, рекомендуемый заголовок PR: \`${EXPECTED_TITLE}\`. Назначение рецензента при этом не блокируется — можете исправить заголовок в любой момент." \
                 --repo ${{ github.repository }}
             fi
+          fi
+
+          # 2. Имя ветки должно начинаться с реального логина
+          if [ "$ACTUAL" != "$BRANCH_AUTHOR" ]; then
+            gh pr comment "$PR" \
+              --body "❌ @${ACTUAL}, имя ветки содержит \`${BRANCH_AUTHOR}\`, но PR открыт от \`${ACTUAL}\`. Переименуйте ветку: \`${ACTUAL}/hw*\`." \
+              --repo ${{ github.repository }}
+            exit 1
+          fi
+
+          # 3. HW-часть ветки должна строго соответствовать формату hw<число>
+          # Это предотвращает обход re-submission check через ветки вида hw2-v2, hw2-final и т.п.
+          if ! echo "$HW" | grep -qE '^hw[0-9]+$'; then
+            gh pr comment "$PR" \
+              --body "❌ @${ACTUAL}, неверный формат имени ветки. Ожидается \`${ACTUAL}/hw<номер>\` (например \`${ACTUAL}/hw2\`), получено \`${ACTUAL}/${HW}\`." \
+              --repo ${{ github.repository }}
+            exit 1
+          fi
+
+          # 4. Файл должен лежать в reviews/{реальный_логин}/
+          FILES=$(gh pr view "$PR" \
+            --json files --jq '.files[].path' \
+            --repo ${{ github.repository }})
+
+          if ! echo "$FILES" | grep -q "^reviews/${ACTUAL}/"; then
+            gh pr comment "$PR" \
+              --body "❌ @${ACTUAL}, файл должен находиться в \`reviews/${ACTUAL}/\`. Сейчас изменены: \`$(echo $FILES | tr ' ' ', ')\`. Исправьте путь и обновите PR." \
+              --repo ${{ github.repository }}
+            exit 1
           fi
 
       - name: Run assign.py
