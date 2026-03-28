@@ -3,8 +3,9 @@
 Adds all Outside Collaborators in the organization to the peer-review-students Team.
 Safe to run repeatedly — skips already-added members.
 
-For users with expired invitations (failed invitations), cancels the old
-invitation and sends a new one so they can accept it.
+For users with expired invitations (failed invitations), sends a new invitation
+directly — failed invitations are already in a terminal state and don't block
+re-invitations, so no cancellation step is needed.
 
 Usage:
     python scripts/add_students_to_hub.py --org my-org
@@ -77,37 +78,6 @@ def get_org_membership_state(org: str, login: str) -> str | None:
     return None
 
 
-def get_failed_invitation_id(org: str, login: str) -> int | None:
-    """Returns the invitation_id of a failed org invitation for this user, or None."""
-    data = gh_api(f"/orgs/{org}/failed_invitations")
-    if not data:
-        return None
-    for inv in data:
-        if inv.get("login") == login:
-            return inv.get("id")
-    return None
-
-
-def get_pending_invitation_id(org: str, login: str) -> int | None:
-    """Returns the invitation_id of a pending org invitation for this user, or None."""
-    data = gh_api(f"/orgs/{org}/invitations")
-    if not data:
-        return None
-    for inv in data:
-        if inv.get("login") == login:
-            return inv.get("id")
-    return None
-
-
-def cancel_invitation(org: str, invitation_id: int) -> bool:
-    result = subprocess.run([
-        "gh", "api",
-        f"/orgs/{org}/invitations/{invitation_id}",
-        "-X", "DELETE"
-    ], capture_output=True, text=True)
-    return result.returncode == 0
-
-
 def add_to_team(org: str, team: str, login: str) -> bool:
     result = subprocess.run([
         "gh", "api",
@@ -136,19 +106,19 @@ def main():
     print(f"Found {len(collaborators)} outside collaborator(s)\n")
 
     # Pre-fetch failed and pending invitations once to avoid N API calls per user
-    failed_invitations: dict[str, int] = {}
+    failed_invitations: set[str] = set()
     failed_data = gh_api(f"/orgs/{org}/failed_invitations") or []
     for inv in failed_data:
         login = inv.get("login")
         if login:
-            failed_invitations[login] = inv["id"]
+            failed_invitations.add(login)
 
-    pending_invitations: dict[str, int] = {}
+    pending_invitations: set[str] = set()
     pending_data = gh_api(f"/orgs/{org}/invitations") or []
     for inv in pending_data:
         login = inv.get("login")
         if login:
-            pending_invitations[login] = inv["id"]
+            pending_invitations.add(login)
 
     print(f"Org pending invitations: {len(pending_invitations)}")
     print(f"Org failed invitations:  {len(failed_invitations)}\n")
@@ -162,7 +132,6 @@ def main():
         team_state = get_team_membership_state(org, team, login)
         org_state = get_org_membership_state(org, login)
 
-        # Build a human-readable status line
         if org_state == "active":
             org_label = "org=active"
         elif login in pending_invitations:
@@ -187,19 +156,15 @@ def main():
             continue
 
         if login in failed_invitations:
-            # Expired invitation blocks re-invitation — cancel it first
-            inv_id = failed_invitations[login]
-            print(f"    → cancelling expired invitation (id={inv_id})...")
-            if cancel_invitation(org, inv_id):
-                print(f"    → cancelled. Sending fresh invitation...")
-                if add_to_team(org, team, login):
-                    print(f"    → re-invited successfully")
-                    reinvited += 1
-                else:
-                    print(f"    → FAILED to re-invite after cancellation", file=sys.stderr)
-                    failed += 1
+            # Failed/expired invitations are already in a terminal state.
+            # DELETE /orgs/{org}/invitations/{id} only works for pending invitations,
+            # not for failed ones — so skip cancellation and re-invite directly.
+            print(f"    → expired invitation detected, sending fresh invitation...")
+            if add_to_team(org, team, login):
+                print(f"    → re-invited successfully")
+                reinvited += 1
             else:
-                print(f"    → FAILED to cancel expired invitation", file=sys.stderr)
+                print(f"    → FAILED to re-invite", file=sys.stderr)
                 failed += 1
             continue
 
