@@ -26,16 +26,16 @@ def main():
 
     pending = state.get("pending", [])
 
-    print(f"\n{'Login':<20} {'Submitted':<6} {'Rev.received':<14} {'Rev.given':<11} {'Waiting':<9} {'Complete'}")
-    print("-" * 75)
+    print(f"\n{'Login':<20} {'Submitted':<10} {'Rev.received':<14} {'Rev.given':<11} {'Waiting':<9} {'Complete'}")
+    print("-" * 77)
 
     for login, d in sorted(students.items()):
         submitted = "✓" if d.get("pr_url") else "✗"
         received = f"{d.get('reviews_received', 0)}/2"
         given = f"{d.get('reviews_given', 0)}/2"
-        waiting = "⏳" if login in pending else ""
+        waiting = "wait" if login in pending else ""
         complete = "✓" if d.get("completed") else ""
-        print(f"{login:<20} {submitted:<6} {received:<14} {given:<11} {waiting:<9} {complete}")
+        print(f"{login:<20} {submitted:<10} {received:<14} {given:<11} {waiting:<9} {complete}")
 
 
 if __name__ == "__main__":
