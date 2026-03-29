@@ -34,7 +34,7 @@ def main():
         received = f"{d.get('reviews_received', 0)}/2"
         given = f"{d.get('reviews_given', 0)}/2"
         waiting = "wait" if login in pending else ""
-        complete = "✓" if d.get("completed") else ""
+        complete = "✓" if d.get("reviews_received", 0) >= 2 and d.get("reviews_given", 0) >= 2 else ""
         print(f"{login:<20} {submitted:<10} {received:<14} {given:<11} {waiting:<9} {complete}")
 
 
