@@ -3,12 +3,11 @@
 Prints a summary table of peer review status for all students.
 
 Usage:
-    python scripts/report.py --hw hw2
+    python scripts/report.py           # all HWs found in state/
+    python scripts/report.py --hw hw2  # single HW
 
-The "Submitted" and "Complete" columns show dates (YYYY-MM-DD).
-Dates are read from state/*.json; if a date is missing (e.g. for students
-who completed before date tracking was added), the script falls back to
-the GitHub API to reconstruct them.
+In GitHub Actions the script also writes a Markdown summary to
+$GITHUB_STEP_SUMMARY, which renders as a rich table in the Actions UI.
 
 Optional environment variables (required only for the API fallback):
     GH_TOKEN    GitHub personal access token
@@ -26,8 +25,9 @@ try:
 except ImportError:
     _REQUESTS_AVAILABLE = False
 
-_GH_TOKEN = os.environ.get("GH_TOKEN", "")
-_HUB_REPO = os.environ.get("HUB_REPO", "")
+_GH_TOKEN      = os.environ.get("GH_TOKEN", "")
+_HUB_REPO      = os.environ.get("HUB_REPO", "")
+_SUMMARY_PATH  = os.environ.get("GITHUB_STEP_SUMMARY", "")  # set by GitHub Actions
 
 _HEADERS = {
     "Authorization": f"Bearer {_GH_TOKEN}",
@@ -37,17 +37,20 @@ _HEADERS = {
 
 _VALID_STATES = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
 
-# Cache PR reviews to avoid duplicate API calls when multiple students
-# reviewed the same PR (e.g. author received 2 reviews → 2 lookups same PR).
+# Cache PR reviews to avoid duplicate API calls within one run.
 _reviews_cache: dict[int, list] = {}
 
+
+# ---------------------------------------------------------------------------
+# GitHub API helpers
+# ---------------------------------------------------------------------------
 
 def _fetch_reviews(pr_number: int) -> list:
     """Fetch formal reviews for a PR from the GitHub API (per-run cache)."""
     if pr_number in _reviews_cache:
         return _reviews_cache[pr_number]
     result = []
-    if _REQUESTS_AVAILABLE and _GH_TOKEN and _HUB_REPO:
+    if _REQUESTS_AVAILABLE and _GH_TOKEN and "/" in (_HUB_REPO or ""):
         try:
             r = _requests.get(
                 f"https://api.github.com/repos/{_HUB_REPO}/pulls/{pr_number}/reviews?per_page=100",
@@ -78,10 +81,8 @@ def _first_review_ts(pr_number: int, reviewer: str) -> str | None:
 
 def _received_completed_at(login: str, data: dict, state: dict) -> str | None:
     """When did this student receive their 2nd counted review?"""
-    # State-first
     if ts := data.get("received_completed_at"):
         return ts
-    # API fallback: find 2nd formal review among counted reviewers on author's PR
     pr_number = data.get("pr_number")
     if not pr_number:
         return None
@@ -95,11 +96,8 @@ def _received_completed_at(login: str, data: dict, state: dict) -> str | None:
 
 def _given_completed_at(login: str, state: dict) -> str | None:
     """When did this student submit their 2nd counted review?"""
-    # State-first
     if ts := state["students"][login].get("given_completed_at"):
         return ts
-    # API fallback: for each author this student has a counted review for,
-    # find the timestamp of their formal review on that author's PR.
     counted = state.get("counted_reviews", [])
     targets = [k.split("->")[1] for k in counted if k.startswith(f"{login}->")]
     if len(targets) < 2:
@@ -115,12 +113,7 @@ def _given_completed_at(login: str, state: dict) -> str | None:
 
 
 def _complete_date(login: str, data: dict, state: dict) -> str | None:
-    """
-    Date when the student fully completed peer review (both conditions met):
-      - received 2 reviews on their own work
-      - gave 2 counted reviews themselves
-    Returns the later of the two timestamps (the moment both were satisfied).
-    """
+    """Date when both peer-review conditions were met (later of the two timestamps)."""
     if data.get("reviews_received", 0) < 2 or data.get("reviews_given", 0) < 2:
         return None
     t1 = _received_completed_at(login, data, state)
@@ -135,22 +128,84 @@ def _fmt(ts: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Row building
+# ---------------------------------------------------------------------------
+
+def _build_rows(state: dict) -> list[dict]:
+    students = state["students"]
+    pending  = set(state.get("pending", []))
+    rows = []
+    for login, d in sorted(students.items()):
+        submitted = _fmt(d.get("submitted_at")) or ("✓" if d.get("pr_url") else "✗")
+        received  = f"{d.get('reviews_received', 0)}/2"
+        given     = f"{d.get('reviews_given', 0)}/2"
+        waiting   = "wait" if login in pending else ""
+        if d.get("reviews_received", 0) >= 2 and d.get("reviews_given", 0) >= 2:
+            complete = _fmt(_complete_date(login, d, state)) or "✓"
+        else:
+            complete = ""
+        rows.append(dict(login=login, submitted=submitted, received=received,
+                         given=given, waiting=waiting, complete=complete))
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Output: plain text (always) + Markdown (CI only)
+# ---------------------------------------------------------------------------
+
+def _print_text(hw: str, rows: list[dict]) -> None:
+    print(f"\n=== {hw} ===")
+    print(f"{'Login':<20} {'Submitted':<12} {'Rev.received':<14} {'Rev.given':<11} {'Waiting':<9} {'Complete'}")
+    print("-" * 79)
+    for r in rows:
+        print(f"{r['login']:<20} {r['submitted']:<12} {r['received']:<14} "
+              f"{r['given']:<11} {r['waiting']:<9} {r['complete']}")
+
+
+def _write_markdown(hw: str, rows: list[dict]) -> None:
+    """Append a Markdown table for this HW to $GITHUB_STEP_SUMMARY."""
+    lines = [
+        f"## {hw}\n",
+        "| Login | Submitted | Rev.received | Rev.given | Waiting | Complete |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| `{r['login']}` | {r['submitted']} | {r['received']} "
+            f"| {r['given']} | {r['waiting']} | {r['complete']} |"
+        )
+    lines.append("")
+    with open(_SUMMARY_PATH, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Per-HW entry point
+# ---------------------------------------------------------------------------
+
+def report_hw(hw: str) -> None:
+    path = Path(f"state/{hw}.json")
+    if not path.exists():
+        print(f"No state file found for {hw}.")
+        return
+    state = json.loads(path.read_text())
+    rows  = _build_rows(state)
+    _print_text(hw, rows)
+    if _SUMMARY_PATH:
+        _write_markdown(hw, rows)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hw", required=True)
+    parser.add_argument(
+        "--hw", default=None,
+        help="ДЗ для отчёта (например hw2). Без параметра — все ДЗ из state/.",
+    )
     args = parser.parse_args()
-
-    path = Path(f"state/{args.hw}.json")
-    if not path.exists():
-        print("No state file found.")
-        return
-
-    state = json.loads(path.read_text())
-    students = state["students"]
-    pending = state.get("pending", [])
 
     if _HUB_REPO and "/" not in _HUB_REPO:
         print(f"Warning: HUB_REPO='{_HUB_REPO}' looks wrong — expected 'org/repo' "
@@ -161,24 +216,15 @@ def main():
         print("Note: API fallback inactive — set GH_TOKEN and HUB_REPO to fill in "
               "historical completion dates.\n")
 
-    print(f"\n{'Login':<20} {'Submitted':<12} {'Rev.received':<14} {'Rev.given':<11} {'Waiting':<9} {'Complete'}")
-    print("-" * 79)
-
-    for login, d in sorted(students.items()):
-        # Submitted: date from state (always present for processed PRs)
-        submitted = _fmt(d.get("submitted_at")) or ("✓" if d.get("pr_url") else "✗")
-
-        received = f"{d.get('reviews_received', 0)}/2"
-        given    = f"{d.get('reviews_given', 0)}/2"
-        waiting  = "wait" if login in pending else ""
-
-        # Complete: date when both conditions were met; "✓" if done but date unknown
-        if d.get("reviews_received", 0) >= 2 and d.get("reviews_given", 0) >= 2:
-            complete = _fmt(_complete_date(login, d, state)) or "✓"
-        else:
-            complete = ""
-
-        print(f"{login:<20} {submitted:<12} {received:<14} {given:<11} {waiting:<9} {complete}")
+    if args.hw:
+        report_hw(args.hw)
+    else:
+        state_files = sorted(Path("state").glob("*.json"))
+        if not state_files:
+            print("No state files found in state/.")
+            return
+        for path in state_files:
+            report_hw(path.stem)
 
 
 if __name__ == "__main__":

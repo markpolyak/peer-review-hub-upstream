@@ -1,0 +1,36 @@
+name: Peer Review Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      hw:
+        description: "ДЗ для отчёта (например hw2). Оставьте пустым — все ДЗ из state/."
+        required: false
+        default: ""
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run report
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          HUB_REPO: ${{ github.repository }}
+        run: |
+          if [ -n "${{ inputs.hw }}" ]; then
+            python scripts/report.py --hw "${{ inputs.hw }}"
+          else
+            python scripts/report.py
+          fi
