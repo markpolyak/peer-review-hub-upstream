@@ -152,8 +152,12 @@ def main():
     students = state["students"]
     pending = state.get("pending", [])
 
-    api_active = _REQUESTS_AVAILABLE and bool(_GH_TOKEN and _HUB_REPO)
-    if not api_active:
+    if _HUB_REPO and "/" not in _HUB_REPO:
+        print(f"Warning: HUB_REPO='{_HUB_REPO}' looks wrong — expected 'org/repo' "
+              f"(e.g. 'itmo-nn-2026/peer-review-hub'). API fallback disabled.\n")
+
+    api_active = _REQUESTS_AVAILABLE and bool(_GH_TOKEN) and "/" in (_HUB_REPO or "")
+    if not api_active and not _HUB_REPO:
         print("Note: API fallback inactive — set GH_TOKEN and HUB_REPO to fill in "
               "historical completion dates.\n")
 
