@@ -4,7 +4,7 @@
 
 ```
 .github/workflows/
-    assign_reviewer.yml   # триггер: PR opened
+    assign_reviewer.yml   # триггер: PR opened, synchronize
     check_review.yml      # триггер: review submitted
     nightly_reminder.yml  # напоминания раз в сутки
 scripts/
@@ -60,10 +60,14 @@ python scripts/report.py --hw hw2
 ## Параметры
 
 В `assign.py`:
-- `MAX_REVIEWS_PER_STUDENT = 4` — максимум исходящих рецензий
+- `MAX_REVIEWS_PER_STUDENT = 4` — максимум назначенных (не завершённых) рецензий на студента
 
-В `check_completion.py` и `remind.py`:
-- `MIN_COMMENTS_REQUIRED = 2` — минимум inline-комментариев
+В `check_completion.py`:
+- `MIN_COMMENTS_REQUIRED = 2` — минимум inline-комментариев для засчитывания рецензии
 
-В `nightly_reminder.yml`:
-- `REMINDER_DAYS: "3"` — через сколько дней напомнить
+В `nightly_reminder.yml` / `remind.py`:
+- `REMINDER_DAYS: "3"` — grace period перед первым напоминанием и cooldown между повторными
+
+В `report.py` (опциональные переменные окружения для API fallback):
+- `GH_TOKEN` — GitHub PAT для запросов к API
+- `HUB_REPO` — репозиторий в формате `org/peer-review-hub`
