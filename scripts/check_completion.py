@@ -16,6 +16,7 @@ Environment variables:
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -123,8 +124,15 @@ def process_review(hw: str, reviewer: str, author: str, pr_number: int) -> None:
         return
 
     counted.append(review_key)
+    now = datetime.now(timezone.utc).isoformat()
+
     reviewer_data["reviews_given"] = reviewer_data.get("reviews_given", 0) + 1
+    if reviewer_data["reviews_given"] >= 2 and "given_completed_at" not in reviewer_data:
+        reviewer_data["given_completed_at"] = now
+
     author_data["reviews_received"] = author_data.get("reviews_received", 0) + 1
+    if author_data["reviews_received"] >= 2 and "received_completed_at" not in author_data:
+        author_data["received_completed_at"] = now
 
     post_comment(
         pr_number,
