@@ -7,6 +7,7 @@
     assign_reviewer.yml   # триггер: PR opened, synchronize
     check_review.yml      # триггер: review submitted
     nightly_reminder.yml  # напоминания раз в сутки
+    report.yml            # ручной запуск сводки (workflow_dispatch)
 scripts/
     assign.py             # алгоритм назначения рецензентов
     check_completion.py   # проверка выполнения рецензии
@@ -70,4 +71,8 @@ python scripts/report.py --hw hw2
 
 В `report.py` (опциональные переменные окружения для API fallback):
 - `GH_TOKEN` — GitHub PAT для запросов к API
-- `HUB_REPO` — репозиторий в формате `org/peer-review-hub`
+- `HUB_REPO` — репозиторий в формате `org/peer-review-hub` (важно: именно `org/repo`, не просто `org`)
+
+В `report.yml`:
+- без параметра `hw` — перебирает все файлы `state/*.json`
+- с параметром `hw` — отчёт только по указанному ДЗ
