@@ -436,3 +436,53 @@ charlie              2026-03-01   0/2            2/2
 ### Напоминание: ротация PAT
 
 Поставьте напоминание в календарь за 2 недели до истечения токена. GitHub также пришлёт email-уведомление.
+
+---
+
+## 10. Переиспользование в другом курсе
+
+Этот репозиторий построен по схеме **upstream/downstream**: скрипты и CI-джобы хранятся в `markpolyak/peer-review-hub-upstream`, каждый курс — отдельный репозиторий с тем же кодом и своими `state/*.json`.
+
+### Развернуть новый курс
+
+```bash
+git clone https://github.com/markpolyak/peer-review-hub-upstream new-course-hub
+cd new-course-hub
+git remote rename origin upstream
+git remote add origin https://github.com/new-org/peer-review-hub.git
+git push -u origin main
+```
+
+Затем настроить secrets в новом репозитории (`GH_TOKEN`, `ORG_NAME`) — всё остальное уже готово.
+
+### Подключить существующий курсовой репо к upstream
+
+```bash
+cd peer-review-hub   # локальный клон курсового репо
+git remote add upstream https://github.com/markpolyak/peer-review-hub-upstream.git
+git fetch upstream
+git merge upstream/main --no-commit
+# Восстановить state-файлы (upstream их не содержит):
+git checkout HEAD -- state/
+git commit -m "chore: connect to markpolyak/peer-review-hub-upstream"
+git push
+```
+
+После этого первого мержа истории связаны — дальше обычный `git merge`.
+
+### Получить обновление скриптов или workflows
+
+```bash
+git fetch upstream
+git merge upstream/main
+# state/*.json не затрагивается — upstream их не содержит
+git push
+```
+
+### Что никогда не попадёт в upstream
+
+| Что | Почему |
+|-----|--------|
+| `state/hw*.json` | данные студентов конкретного курса; бот коммитит их только в курсовой репо |
+| `reviews/` | только в ветках студентов, никогда не мерджятся в `main` |
+| Secrets (`GH_TOKEN`, `ORG_NAME`) | хранятся в настройках репо, не в коде |
