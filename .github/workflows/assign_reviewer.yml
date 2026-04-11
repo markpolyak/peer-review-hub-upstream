@@ -98,6 +98,25 @@ jobs:
             exit 1
           fi
 
+      - name: Post review guideline
+        if: github.event.action == 'opened'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          HW="${{ steps.meta.outputs.hw }}"
+          PR="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+          GUIDELINE="docs/guidelines/${HW}.md"
+
+          if [ -f "$GUIDELINE" ]; then
+            GUIDELINE_URL="https://github.com/${REPO}/blob/main/${GUIDELINE}"
+            gh pr comment "$PR" \
+              --body "📋 **Гайдлайн по рецензированию для ${HW^^}:** [открыть](${GUIDELINE_URL})
+
+Перед тем как оставить рецензию, ознакомьтесь с критериями оценки по ссылке выше." \
+              --repo "$REPO"
+          fi
+
       - name: Run assign.py
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
